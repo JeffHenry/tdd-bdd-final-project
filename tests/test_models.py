@@ -27,7 +27,7 @@ import os
 import logging
 import unittest
 from decimal import Decimal
-from service.models import Product, Category, db
+from service.models import Product, Category, db, DataValidationError
 from service import app
 from tests.factories import ProductFactory
 
@@ -130,6 +130,7 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(len(products),1)
         self.assertEqual(products[0].id, original_id)
         self.assertEqual(products[0].description, "testing")
+        
 
     def test_delete_a_product(self):
         product = ProductFactory()
@@ -182,3 +183,88 @@ class TestProductModel(unittest.TestCase):
         self.assertEqual(found.count(), count)
         for product in found:
             self.assertEqual(product.category, category)
+
+    def test_deserialize_invalid_type(self):
+        """test deserialization validation error with an invalid data type"""
+        # Create a valid Product instance
+        product = Product(name="Fedora", description="A red hat", price=12.50, available=True, category=Category.CLOTHS)
+
+        # Attempt to deserialize using an invalid type (e.g., a string instead of a dictionary)
+        invalid_data = "this is not a dictionary"
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(invalid_data)
+
+        # Verify that the exception message matches the expected output
+        self.assertIn("bad or no data", str(context.exception))
+
+    def test_deserialize_missing_key(self):
+        """test deserialization validation error with a missing required key"""
+        product = Product(name="Fedora", description="A red hat", price=12.50, available=True, category=Category.CLOTHS)
+        data = {
+            "description": "A red hat",
+            "price": "12.50",
+            "available": True,
+            "category": "CLOTHS"
+        }  # Missing "name"
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("missing name", str(context.exception))
+
+    def test_deserialize_invalid_boolean(self):
+        """test deserialization validation error with an invalid boolean field"""
+        product = Product(name="Fedora", description="A red hat", price=12.50, available=True, category=Category.CLOTHS)
+        data = {
+            "name": "Fedora",
+            "description": "A red hat",
+            "price": "12.50",
+            "available": "not a boolean",  # Invalid boolean
+            "category": "CLOTHS"
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("Invalid type for boolean [available]", str(context.exception))
+
+    def test_deserialize_invalid_category(self):
+        """test deserialization validation error with an invalid category"""
+        product = Product(name="Fedora", description="A red hat", price=12.50, available=True, category=Category.CLOTHS)
+        data = {
+            "name": "Fedora",
+            "description": "A red hat",
+            "price": "12.50",
+            "available": True,
+            "category": "INVALID_CATEGORY"  # Invalid category
+        }
+        with self.assertRaises(DataValidationError) as context:
+            product.deserialize(data)
+        self.assertIn("Invalid attribute", str(context.exception))
+
+    def test_find_by_price(self):
+        """test to find products by price"""
+        # Create a batch of products with varied prices
+        products = ProductFactory.create_batch(10)
+        for product in products:
+            product.create()
+
+        # Choose a price from one of the products
+        price = products[0].price
+        count = len([product for product in products if product.price == price])
+
+        # Find products by price
+        found = Product.find_by_price(price)
+        
+        # Assert the count of matching products
+        self.assertEqual(found.count(), count)
+        
+        # Verify all found products have the expected price
+        for product in found:
+            self.assertEqual(product.price, price)
+
+    def test_update_a_product_with_empty_id(self):
+        product = ProductFactory()
+        product.id = None
+        product.create()
+        self.assertIsNotNone(product.id)
+        product.id = None
+        with self.assertRaises(DataValidationError) as context:
+            product.update()
+        self.assertIn("Update called with empty ID field", str(context.exception))

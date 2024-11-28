@@ -268,6 +268,27 @@ class TestProductRoutes(TestCase):
         for product in data:
             self.assertEqual(product["available"], True)
 
+    def test_update_product_not_found(self):
+        """It should abort with a 404 error if the product is not found"""
+        # create a product to update
+        test_product = ProductFactory()
+        response = self.client.post(BASE_URL, json=test_product.serialize())
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # update the product
+        new_product = response.get_json()
+        # self.client.put(f"{BASE_URL}/{new_product['id']}", json=new_product)
+        response = self.client.put(f"{BASE_URL}/9999999999", json={"description": "unknown"})
+        
+        # we should get back a 404
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        
+        # the response should include is that the product was not found
+        error_message = response.get_json().get('message', '')
+        self.assertIn("Product with id", error_message)
+        self.assertIn("was not found", error_message)
+        
+
     ######################################################################
     # Utility functions
     ######################################################################
